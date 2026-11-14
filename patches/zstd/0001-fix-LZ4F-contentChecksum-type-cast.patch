@@ -1,0 +1,22 @@
+Fix incorrect type cast: contentChecksum_t -> LZ4F_contentChecksum_t
+
+zstd 1.5.7's fileio.c casts to contentChecksum_t which is a bare LZ4
+type that was renamed to LZ4F_contentChecksum_t in newer LZ4 headers.
+Use the correct prefixed type to fix compilation against current LZ4.
+
+Signed-off-by: Rushil Koul <ruskoul3@gmail.com>
+---
+ programs/fileio.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/programs/fileio.c
++++ b/programs/fileio.c
+@@ -1421,7 +1421,7 @@ static void FIO_LZ4_compress(FIO_ctx_t* const fio_ctx,
+     prefs.compressionLevel = compressionLevel;
+     prefs.frameInfo.blockMode = LZ4F_blockLinked;
+     prefs.frameInfo.blockSizeID = LZ4F_max64KB;
+-    prefs.frameInfo.contentChecksumFlag = (contentChecksum_t)checksumFlag;
++    prefs.frameInfo.contentChecksumFlag = (LZ4F_contentChecksum_t)checksumFlag;
+ #if LZ4_VERSION_NUMBER >= 10600
+     prefs.frameInfo.contentSize = (srcFileSize==UTIL_FILESIZE_UNKNOWN) ? 0 : srcFileSize;
+ #endif

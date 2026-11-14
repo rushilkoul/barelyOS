@@ -41,32 +41,13 @@ make defconfig
 
 ---
 
-### building
+### building & running
 
-first build is a two-step process. buildroot extracts sources mid-build, and one of them (zstd 1.5.7) uses a renamed LZ4 type that breaks:
-
-```bash
-# 1. let buildroot extract sources. will fail on zstd!
-make
-
-# 2. apply the patch
-make patch
-
-# 3. resume
-make
-```
-###### yes, this is hacky. but i specialize in hacky
-
-after the first successful build, incremental builds are just:
+build the image:
 ```bash
 make
 ```
-
-
----
-
-### running
-
+launch QEMU and run the image:
 ```bash
 make run
 ```
@@ -81,7 +62,7 @@ qemu-system-x86_64 -M pc \
   -nographic
 ```
 
-to exit: `poweroff` or `Ctrl-A X`
+to exit: type `poweroff` in the shell
 
 
 ---
