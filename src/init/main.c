@@ -7,10 +7,15 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/ioctl.h>
-
+#include <sys/mount.h>
 
 int main(void) {
     printf("barelyOS: init started. PID = %d\n", getpid());
+
+    if (mount("proc", "/proc", "proc", 0, NULL) < 0) perror("mount /proc");
+    if (mount("sysfs", "/sys", "sysfs", 0, NULL) < 0) perror("mount /sys");
+    if (mount("devtmpfs", "/dev", "devtmpfs", 0, NULL) < 0) perror("mount /dev");
+    
 
     while (1) {
         pid_t pid = fork();
@@ -52,22 +57,37 @@ int main(void) {
             _exit(127);
         }
 
-        printf("barelyOS: spawned shell, PID = %d\n", pid);
-
+        
         int status;
-        pid_t result;
+        pid_t child;
 
-        do {
-            result = waitpid(pid, &status, 0);
-        } while (result < 0 && errno == EINTR);
+        while (1) {
+            child = waitpid(-1, &status, 0);
 
-        if (result < 0) {
-            perror("waitpid");
-        } else {
-            printf("barelyOS: shell exited. Restarting...\n");
+            if (child < 0) {
+                if (errno == EINTR)
+                    continue;
+
+                perror("waitpid");
+                break;
+            }
+
+            if (child == pid) {
+                if (WIFEXITED(status)) {
+                    printf("barelyOS: shell exited with status %d\n",
+                           WEXITSTATUS(status));
+                } else if (WIFSIGNALED(status)) {
+                    printf("barelyOS: shell killed by signal %d\n",
+                           WTERMSIG(status));
+                }
+            
+                printf("barelyOS: restarting shell...\n");
+                break;
+            }
+
+            printf("barelyOS: reaped child PID %d\n", child);
         }
 
-        sleep(1);
     }
 
     return 0;

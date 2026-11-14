@@ -62,7 +62,7 @@ qemu-system-x86_64 -M pc \
   -nographic
 ```
 
-to exit: type `poweroff` in the shell
+to exit: `Ctrl A, X` or type `poweroff` in the shell
 
 
 ---
