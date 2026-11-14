@@ -4,6 +4,13 @@ set -e
 BUILDROOT_OUT="$(dirname "$0")/buildroot/output/build"
 
 # zstd 1.5.7 / programs/fileio.c
+
+# what this changes (diff):
+
+# -    prefs.frameInfo.contentChecksumFlag = (contentChecksum_t)checksumFlag;                                                  
+# +    prefs.frameInfo.contentChecksumFlag = (LZ4F_contentChecksum_t)checksumFlag;  
+
+
 ZSTD_FILEIO="$BUILDROOT_OUT/host-zstd-1.5.7/programs/fileio.c"
 
 if [ -f "$ZSTD_FILEIO" ]; then

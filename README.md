@@ -34,6 +34,11 @@ git clone --recurse-submodules https://github.com/rushilkoul/barelyOS.git
 git submodule update --init --recursive
 ```
 
+then generate the buildroot config:
+```bash
+make defconfig
+```
+
 ---
 
 ### building
@@ -42,19 +47,19 @@ first build is a two-step process. buildroot extracts sources mid-build, and one
 
 ```bash
 # 1. let buildroot extract sources. will fail on zstd!
-make -C buildroot -j$(nproc)
+make
 
 # 2. apply the patch
-./patch.sh
+make patch
 
 # 3. resume
-make -C buildroot -j$(nproc)
+make
 ```
 ###### yes, this is hacky. but i specialize in hacky
 
 after the first successful build, incremental builds are just:
 ```bash
-make -C buildroot -j$(nproc)
+make
 ```
 
 
@@ -63,7 +68,7 @@ make -C buildroot -j$(nproc)
 ### running
 
 ```bash
-./buildroot/output/images/start-qemu.sh
+make run
 ```
 
 or manually:
@@ -88,3 +93,14 @@ to exit: `poweroff` or `Ctrl-A X`
 - [ ] custom PID 1 (barely-init)
 - [ ] custom shell (barely-sh)
 - [ ] custom utilities
+
+--- 
+
+### philosophy
+
+barelyOS isn't about reinventing Linux.
+
+we use existing infrastructure where it makes sense,
+and build the parts we actually want to understand.
+
+this is very much a "learning" project.
