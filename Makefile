@@ -2,7 +2,7 @@
 NPROC     := $(shell nproc)
 BR_DIR    := buildroot
 DEFCONFIG := $(CURDIR)/barelyos_defconfig
-TARGET_CC := $(BR_DIR)/output/host/bin/x86_64-buildroot-linux-gnu-gcc
+TARGET_CC := $(CURDIR)/$(BR_DIR)/output/host/bin/x86_64-buildroot-linux-gnu-gcc
 
 INIT_SRC  := src/init/main.c
 INIT_BIN  := rootfs-overlay/sbin/barely-init
