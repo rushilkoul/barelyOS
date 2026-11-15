@@ -5,6 +5,9 @@
 #include <errno.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <utime.h>
 
 #include "shell.h"
 
@@ -232,37 +235,64 @@ static int cmd_chmod(int argc, char **argv)
 
 static int cmd_mkdir(int argc, char **argv)
 {
-    (void)argc; (void)argv;
-    /* TODO: mkdir(argv[1], 0755)
-     * Stretch: -p to create parents */
-    fprintf(stderr, "mkdir: not yet implemented\n");
-    return 1;
+    if (argc < 2) {
+        fprintf(stderr, "mkdir: missing operand\n");
+        return 1;
+    }
+    if (mkdir(argv[1], 0755) < 0) {
+        perror("mkdir");
+        return 1;
+    }
+    return 0;
 }
 
 static int cmd_rmdir(int argc, char **argv)
 {
-    (void)argc; (void)argv;
-    /* TODO: rmdir(argv[1]) — fails if non-empty, that's correct */
-    fprintf(stderr, "rmdir: not yet implemented\n");
-    return 1;
+    if (argc < 2) {
+        fprintf(stderr, "rmdir: missing operand\n");
+        return 1;
+    }
+    if (rmdir(argv[1]) < 0) {
+        perror("rmdir");
+        return 1;
+    }
+    return 0;
 }
 
 static int cmd_rm(int argc, char **argv)
 {
-    (void)argc; (void)argv;
-    /* TODO: unlink(argv[1])
-     * Stretch: -r for recursive removal */
-    fprintf(stderr, "rm: not yet implemented\n");
-    return 1;
+    if (argc < 2) {
+        fprintf(stderr, "rm: missing operand\n");
+        return 1;
+    }
+    if (unlink(argv[1]) < 0) {
+        perror("rm");
+        return 1;
+    }
+    return 0;
 }
 
 static int cmd_touch(int argc, char **argv)
 {
-    (void)argc; (void)argv;
-    /* TODO: open(argv[1], O_CREAT|O_WRONLY, 0644) then close()
-     * For existing files: utime(argv[1], NULL) updates the timestamp */
-    fprintf(stderr, "touch: not yet implemented\n");
-    return 1;
+    if (argc < 2) {
+        fprintf(stderr, "touch: missing operand\n");
+        return 1;
+    }
+
+    int fd = open(argv[1], O_CREAT | O_WRONLY, 0644);
+    if (fd < 0) {
+        perror("touch");
+        return 1;
+    }
+    if (close(fd) < 0) {
+        perror("touch");
+        return 1;
+    }
+    if (utime(argv[1], NULL) < 0) {
+        perror("touch");
+        return 1;
+    }
+    return 0;
 }
 
 /* ── Abhigya: cat, head, tail, wc, echo, pwd ───────────────────────────── */
