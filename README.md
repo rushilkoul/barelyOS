@@ -7,8 +7,9 @@ barely a linux distribution.
 
 - **arch:** x86_64
 - **kernel:** Linux 6.18.7
-- **userspace:** BusyBox
-- **libc:** glibc (buildroot toolchain)
+- **init (PID 1):** barely-init (custom, `src/init/`)
+- **shell:** barelysh (custom, `src/shell/`) with BusyBox fallback for unimplemented commands
+- **libc:** glibc
 - **rootfs:** ext2, 60MB
 - **emulator:** QEMU (pc machine, virtio disk + net)
 
@@ -47,6 +48,9 @@ build the image:
 ```bash
 make
 ```
+
+> **note:** first build only — buildroot extracts sources mid-build. if `make` fails on `zstd`, run `./apply-patches.sh` then `make` again.
+
 launch QEMU and run the image:
 ```bash
 make run
@@ -57,7 +61,7 @@ or manually:
 qemu-system-x86_64 -M pc \
   -kernel buildroot/output/images/bzImage \
   -drive file=buildroot/output/images/rootfs.ext2,if=virtio,format=raw \
-  -append "rootwait root=/dev/vda console=tty1 console=ttyS0 init=/sbin/barely-init" \
+  -append "rootwait root=/dev/vda console=tty1 console=ttyS0 init=/sbin/barely-init quiet loglevel=3" \
   -net nic,model=virtio -net user \
   -nographic
 ```
@@ -71,9 +75,9 @@ to exit: `Ctrl A, X` or type `poweroff` in the shell
 
 - [x] bootable Linux system in QEMU
 - [x] working baseline userspace
-- [ ] custom PID 1 (barely-init)
-- [ ] custom shell (barely-sh)
-- [ ] custom utilities
+- [x] custom PID 1 (barely-init)
+- [x] custom shell (barelysh) — builtins in progress
+- [ ] custom utilities (ls, cat, mkdir, mv, ...)
 
 --- 
 
