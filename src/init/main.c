@@ -14,7 +14,8 @@ int main(void) {
 
     if (mount("proc", "/proc", "proc", 0, NULL) < 0) perror("mount /proc");
     if (mount("sysfs", "/sys", "sysfs", 0, NULL) < 0) perror("mount /sys");
-    if (mount("devtmpfs", "/dev", "devtmpfs", 0, NULL) < 0) perror("mount /dev");
+    if (mount("devtmpfs", "/dev", "devtmpfs", 0, NULL) < 0 && errno != EBUSY)
+        perror("mount /dev");
     
 
     while (1) {
@@ -51,7 +52,7 @@ int main(void) {
             if (tty > STDERR_FILENO)
                 close(tty);
         
-            execl("/bin/sh", "sh", (char *)NULL);
+            execl("/bin/barelysh", "barelysh", (char *)NULL);
         
             perror("exec");
             _exit(127);
@@ -62,29 +63,28 @@ int main(void) {
         pid_t child;
 
         while (1) {
-            child = waitpid(-1, &status, WNOHANG);
+            child = waitpid(-1, &status, 0); /* block until any child exits */
 
             if (child < 0) {
                 if (errno == EINTR)
                     continue;
-
                 perror("waitpid");
                 break;
             }
 
             if (child == pid) {
-                if (WIFEXITED(status)) {
+                if (WIFEXITED(status))
                     printf("barelyOS: shell exited with status %d\n",
                            WEXITSTATUS(status));
-                } else if (WIFSIGNALED(status)) {
+                else if (WIFSIGNALED(status))
                     printf("barelyOS: shell killed by signal %d\n",
                            WTERMSIG(status));
-                }
-            
+
                 printf("barelyOS: restarting shell...\n");
                 break;
             }
 
+            /* reap any other stray children spawned by the shell */
             printf("barelyOS: reaped child PID %d\n", child);
         }
 
