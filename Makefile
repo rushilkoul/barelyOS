@@ -4,20 +4,26 @@ BR_DIR    := buildroot
 DEFCONFIG := $(CURDIR)/barelyos_defconfig
 TARGET_CC := $(BR_DIR)/output/host/bin/x86_64-buildroot-linux-gnu-gcc
 
-INIT_SRC := src/init/main.c
-INIT_BIN := rootfs-overlay/sbin/barely-init
+INIT_SRC  := src/init/main.c
+INIT_BIN  := rootfs-overlay/sbin/barely-init
 
-.PHONY: all build init defconfig saveconfig menuconfig linux-menuconfig run clean
+SHELL_DIR := src/shell
+SHELL_BIN := rootfs-overlay/bin/barelysh
+
+.PHONY: all build init shell defconfig saveconfig menuconfig linux-menuconfig run clean
 
 all: build
 
-build: init
+build: init shell
 	$(MAKE) -C $(BR_DIR) -j$(NPROC)
 
 init: $(INIT_BIN)
 
 $(INIT_BIN): $(INIT_SRC)
 	$(TARGET_CC) -Wall -Wextra -O2 $< -o $@
+
+shell:
+	$(MAKE) -C $(SHELL_DIR) CC=$(TARGET_CC)
 
 defconfig:
 	$(MAKE) -C $(BR_DIR) BR2_DEFCONFIG=$(DEFCONFIG) defconfig
@@ -40,4 +46,5 @@ run:
 		-nographic
 
 clean:
+	$(MAKE) -C $(SHELL_DIR) clean
 	$(MAKE) -C $(BR_DIR) clean

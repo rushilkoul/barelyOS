@@ -62,7 +62,7 @@ int main(void) {
         pid_t child;
 
         while (1) {
-            child = waitpid(-1, &status, 0);
+            child = waitpid(-1, &status, WNOHANG);
 
             if (child < 0) {
                 if (errno == EINTR)
