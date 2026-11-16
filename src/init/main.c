@@ -8,8 +8,25 @@
 #include <sys/wait.h>
 #include <sys/ioctl.h>
 #include <sys/mount.h>
+#include <sys/reboot.h>
+#include <signal.h>
+
+static volatile sig_atomic_t g_shutdown_cmd = 0;
+
+static void handle_shutdown_sig(int sig) {
+    if (sig == SIGUSR1 || sig == SIGPWR) {
+        g_shutdown_cmd = RB_POWER_OFF;
+    } else if (sig == SIGUSR2 || sig == SIGINT || sig == SIGTERM) {
+        g_shutdown_cmd = RB_AUTOBOOT;
+    }
+}
 
 int main(void) {
+    signal(SIGUSR1, handle_shutdown_sig);
+    signal(SIGUSR2, handle_shutdown_sig);
+    signal(SIGPWR,  handle_shutdown_sig);
+    signal(SIGTERM, handle_shutdown_sig);
+
     printf("barelyOS: init started. PID = %d\n", getpid());
 
     if (mount("proc", "/proc", "proc", 0, NULL) < 0) perror("mount /proc");
@@ -62,15 +79,26 @@ int main(void) {
         int status;
         pid_t child;
 
+        if (g_shutdown_cmd) {
+            printf("barelyOS: shutdown requested, syncing disks...\n");
+            sync();
+            reboot(g_shutdown_cmd);
+            while (1) pause();
+        }
+
         while (1) {
             child = waitpid(-1, &status, 0); /* block until any child exits */
 
             if (child < 0) {
-                if (errno == EINTR)
+                if (errno == EINTR) {
+                    if (g_shutdown_cmd) break;
                     continue;
+                }
                 perror("waitpid");
                 break;
             }
+
+            if (g_shutdown_cmd) break;
 
             if (child == pid) {
                 if (WIFEXITED(status))
@@ -84,7 +112,6 @@ int main(void) {
                 break;
             }
 
-            /* reap any other stray children spawned by the shell */
             printf("barelyOS: reaped child PID %d\n", child);
         }
 

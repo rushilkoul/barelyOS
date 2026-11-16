@@ -15,6 +15,9 @@
 #include <pwd.h>
 #include <grp.h>
 #include <time.h>
+#include <sys/reboot.h>
+#include <sys/utsname.h>
+#include <sys/sysinfo.h>
 
 #include "shell.h"
 
@@ -22,6 +25,9 @@ static int builtin_cd(int argc, char **argv);
 static int builtin_exit(int argc, char **argv);
 static int builtin_help(int argc, char **argv);
 static int builtin_bash(int argc, char **argv);
+static int builtin_poweroff(int argc, char **argv);
+static int builtin_reboot(int argc, char **argv);
+static int builtin_barely_info(int argc, char **argv);
 static int cmd_ls(int argc, char **argv);
 static int cmd_find(int argc, char **argv);
 static int cmd_stat(int argc, char **argv);
@@ -49,10 +55,12 @@ static int print_tree(const char *path, const char *prefix);
 
 
 static const builtin_t builtins[] = {
-    { "cd",     builtin_cd,    "change directory"                        },
-    { "exit",   builtin_exit,  "exit the shell"                          },
-    { "help",   builtin_help,  "list built-in commands"                  },
-    { "bash",   builtin_bash,  "run a command via /bin/sh, bypassing us" },
+    { "cd",       builtin_cd,       "change directory"                        },
+    { "exit",     builtin_exit,     "exit the shell"                          },
+    { "help",     builtin_help,     "list built-in commands"                  },
+    { "bash",     builtin_bash,     "run a command via /bin/sh, bypassing us" },
+    { "poweroff", builtin_poweroff, "flush disks and shut down machine"       },
+    { "reboot",   builtin_reboot,   "flush disks and restart machine"         },
     { "ls",     cmd_ls,        "list directory contents"     },
     { "find",   cmd_find,      "search for files"            },
     { "stat",   cmd_stat,      "display file status"         },
@@ -157,6 +165,30 @@ static int builtin_bash(int argc, char **argv)
     waitpid(pid, &status, 0);
     free(cmd);
     return WIFEXITED(status) ? WEXITSTATUS(status) : 1;
+}
+
+static int builtin_poweroff(int argc, char **argv)
+{
+    (void)argc; (void)argv;
+    printf("barelyOS: syncing disks and powering off...\n");
+    sync();
+    if (reboot(RB_POWER_OFF) < 0) {
+        perror("poweroff");
+        return 1;
+    }
+    return 0;
+}
+
+static int builtin_reboot(int argc, char **argv)
+{
+    (void)argc; (void)argv;
+    printf("barelyOS: syncing disks and rebooting...\n");
+    sync();
+    if (reboot(RB_AUTOBOOT) < 0) {
+        perror("reboot");
+        return 1;
+    }
+    return 0;
 }
 
 int main(void)
