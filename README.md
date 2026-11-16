@@ -35,25 +35,28 @@ git clone --recurse-submodules https://github.com/rushilkoul/barelyOS.git
 git submodule update --init --recursive
 ```
 
-then generate the buildroot config:
-```bash
-make defconfig
-```
-
----
-
 ### building & running
 
-build the image:
+#### first-time build
+
+
+```bash
+make defconfig
+make -C buildroot -j$(nproc)
+make
+```
+
+#### subsequent builds
 ```bash
 make
 ```
 
-> **note:** first build only — buildroot extracts sources mid-build. if `make` fails on `zstd`, run `./apply-patches.sh` then `make` again.
-
-launch QEMU and run the image:
+#### running
 ```bash
 make run
+
+# or if you want to use your own terminal:
+make run-os
 ```
 
 or manually:
