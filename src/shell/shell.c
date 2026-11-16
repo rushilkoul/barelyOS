@@ -18,6 +18,7 @@
 #include <sys/reboot.h>
 #include <sys/utsname.h>
 #include <sys/sysinfo.h>
+#include <sys/statvfs.h>
 
 #include "shell.h"
 
@@ -27,7 +28,7 @@ static int builtin_help(int argc, char **argv);
 static int builtin_bash(int argc, char **argv);
 static int builtin_poweroff(int argc, char **argv);
 static int builtin_reboot(int argc, char **argv);
-static int builtin_barely_info(int argc, char **argv);
+static int builtin_barefetch(int argc, char **argv);
 static int cmd_ls(int argc, char **argv);
 static int cmd_find(int argc, char **argv);
 static int cmd_stat(int argc, char **argv);
@@ -55,12 +56,13 @@ static int print_tree(const char *path, const char *prefix);
 
 
 static const builtin_t builtins[] = {
-    { "cd",       builtin_cd,       "change directory"                        },
-    { "exit",     builtin_exit,     "exit the shell"                          },
-    { "help",     builtin_help,     "list built-in commands"                  },
-    { "bash",     builtin_bash,     "run a command via /bin/sh, bypassing us" },
-    { "poweroff", builtin_poweroff, "flush disks and shut down machine"       },
-    { "reboot",   builtin_reboot,   "flush disks and restart machine"         },
+    { "cd",          builtin_cd,          "change directory"                        },
+    { "exit",        builtin_exit,        "exit the shell"                          },
+    { "help",        builtin_help,        "list built-in commands"                  },
+    { "bash",        builtin_bash,        "run a command via /bin/sh, bypassing us" },
+    { "poweroff", builtin_poweroff, "flush disks and shut down machine"   },
+    { "reboot",   builtin_reboot,   "flush disks and restart machine"     },
+    { "barefetch", builtin_barefetch, "display system information and logo" },
     { "ls",     cmd_ls,        "list directory contents"     },
     { "find",   cmd_find,      "search for files"            },
     { "stat",   cmd_stat,      "display file status"         },
@@ -191,6 +193,60 @@ static int builtin_reboot(int argc, char **argv)
     return 0;
 }
 
+static const char *ascii_logo[] = {
+    "   _                    _       ___  ____  ",
+    "  | |__   __ _ _ __ ___| |_   _/ _ \\/ ___| ",
+    "  | '_ \\ / _` | '__/ _ \\ | | | | | | \\___ \\ ",
+    "  | |_) | (_| | | |  __/ | |_| | |_| |___) |",
+    "  |_.__/ \\__,_|_|  \\___|_|\\__, |\\___/|____/ ",
+    "                          |___/             ",
+    "                                            "
+};
+
+static int builtin_barefetch(int argc, char **argv)
+{
+    (void)argc; (void)argv;
+
+    struct utsname u;
+    uname(&u);
+
+    struct sysinfo s;
+    sysinfo(&s);
+
+    long uptime_m = s.uptime / 60;
+    long uptime_h = uptime_m / 60;
+    uptime_m %= 60;
+
+    unsigned long total_ram = (s.totalram * s.mem_unit) / (1024 * 1024);
+    unsigned long free_ram = (s.freeram * s.mem_unit) / (1024 * 1024);
+    unsigned long used_ram = total_ram - free_ram;
+
+    unsigned long total_disk_mb = 0, used_disk_mb = 0;
+    struct statvfs fs;
+    if (statvfs("/", &fs) == 0) {
+        unsigned long long total_bytes = (unsigned long long)fs.f_blocks * fs.f_frsize;
+        unsigned long long free_bytes = (unsigned long long)fs.f_bfree * fs.f_frsize;
+        total_disk_mb = (unsigned long)(total_bytes / (1024 * 1024));
+        used_disk_mb = (unsigned long)((total_bytes - free_bytes) / (1024 * 1024));
+    }
+
+    char info[7][256];
+    snprintf(info[0], sizeof(info[0]), "\033[1;36mOS:\033[0m      barelyOS v%s", BARELY_VERSION);
+    snprintf(info[1], sizeof(info[1]), "\033[1;36mKernel:\033[0m  %s %s", u.sysname, u.release);
+    snprintf(info[2], sizeof(info[2]), "\033[1;36mArch:\033[0m    %s", u.machine);
+    snprintf(info[3], sizeof(info[3]), "\033[1;36mUptime:\033[0m  %ldh %ldm", uptime_h, uptime_m);
+    snprintf(info[4], sizeof(info[4]), "\033[1;36mMemory:\033[0m  %luMB / %luMB", used_ram, total_ram);
+    snprintf(info[5], sizeof(info[5]), "\033[1;36mDisk (/):\033[0m %luMB / %luMB", used_disk_mb, total_disk_mb);
+    snprintf(info[6], sizeof(info[6]), "\033[1;36mShell:\033[0m   barelysh");
+
+    printf("\n");
+    for (int i = 0; i < 7; i++) {
+        printf("  \033[1;35m%-45s\033[0m  %s\n", ascii_logo[i], info[i]);
+    }
+    printf("\n");
+    return 0;
+}
+
 int main(void)
 {
     char  line[SHELL_MAX_INPUT];
@@ -228,11 +284,23 @@ int main(void)
         if (argc == 0) continue;
 
         int found = 0;
-        for (int i = 0; i < n_builtins; i++) {
-            if (strcmp(argv[0], builtins[i].name) == 0) {
-                builtins[i].fn(argc, argv);
-                found = 1;
-                break;
+        if (strcmp(argv[0], "about") == 0 || strcmp(argv[0], "story") == 0) {
+            printf("\n"
+                   "  \033[1;33m[ barelyOS : barely a linux distribution ]\033[0m\n\n"
+                   "  barelyOS started as an experiment in stripping linux down to its\n"
+                   "  bare essentials: no systemd, no package manager, no bloated runtime.\n\n"
+                   "  we built our own PID 1, our own interactive shell (barelysh) and\n"
+                   "  implemented lots of core unix utilities from scratch. Built purely\n"
+                   "  for the fun of understanding how an OS actually works. :)\n\n"
+                   "  \033[1;36mteam:\033[0m Rushil, Shreyansh, Kaustubh, Kisna, Abhigya (PID 5)\n\n");
+            found = 1;
+        } else {
+            for (int i = 0; i < n_builtins; i++) {
+                if (strcmp(argv[0], builtins[i].name) == 0) {
+                    builtins[i].fn(argc, argv);
+                    found = 1;
+                    break;
+                }
             }
         }
         if (!found) exec_external(argv);

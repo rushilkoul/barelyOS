@@ -10,7 +10,7 @@ INIT_BIN  := rootfs-overlay/sbin/barely-init
 SHELL_DIR := src/shell
 SHELL_BIN := rootfs-overlay/bin/barelysh
 
-.PHONY: all build init shell defconfig saveconfig menuconfig linux-menuconfig run clean
+.PHONY: all build init shell defconfig saveconfig menuconfig linux-menuconfig run run-os clean
 
 all: build
 
@@ -37,13 +37,16 @@ menuconfig:
 linux-menuconfig:
 	$(MAKE) -C $(BR_DIR) linux-menuconfig
 
-run:
+run-os:
 	qemu-system-x86_64 -M pc \
 		-kernel $(BR_DIR)/output/images/bzImage \
 		-drive file=$(BR_DIR)/output/images/rootfs.ext2,if=virtio,format=raw \
 		-append "rootwait root=/dev/vda rw console=tty1 console=ttyS0 init=/sbin/barely-init quiet loglevel=3" \
 		-net nic,model=virtio -net user \
 		-nographic
+
+run:
+	cool-retro-term --title "barelyOS" -e make run-os
 
 clean:
 	$(MAKE) -C $(SHELL_DIR) clean

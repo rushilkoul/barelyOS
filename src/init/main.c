@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -61,6 +62,13 @@ int main(void) {
                 perror("TIOCSCTTY");
                 _exit(1);
             }
+
+            struct termios tio;
+            if (tcgetattr(tty, &tio) == 0) {
+                tio.c_lflag |= (ICANON | ECHO | ECHOE | ECHOK | ECHONL);
+                tio.c_cc[VERASE] = 0x08;
+                tcsetattr(tty, TCSANOW, &tio);
+            }
         
             dup2(tty, STDIN_FILENO);
             dup2(tty, STDOUT_FILENO);
@@ -68,6 +76,9 @@ int main(void) {
         
             if (tty > STDERR_FILENO)
                 close(tty);
+
+            setenv("TERM", "xterm-256color", 0);
+            setenv("PATH", "/bin:/sbin:/usr/bin:/usr/sbin", 0);
         
             execl("/bin/barelysh", "barelysh", (char *)NULL);
         
@@ -87,7 +98,7 @@ int main(void) {
         }
 
         while (1) {
-            child = waitpid(-1, &status, 0); /* block until any child exits */
+            child = waitpid(-1, &status, 0);
 
             if (child < 0) {
                 if (errno == EINTR) {
