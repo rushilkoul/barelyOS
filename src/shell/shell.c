@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
+#include <limits.h>
 #include <unistd.h>
 #include <errno.h>
 #include <sys/types.h>
@@ -369,52 +371,273 @@ static int cmd_touch(int argc, char **argv)
 
 static int cmd_cat(int argc, char **argv)
 {
-    (void)argc; (void)argv;
-    /* TODO: fopen(argv[1], "r"), fgets loop, fclose
-     * Stretch: multiple files (loop argv[1..argc-1]) */
-    fprintf(stderr, "cat: not yet implemented\n");
-    return 1;
+    if (argc < 2) {
+        fprintf(stderr, "cat: missing operand\n");
+        return 1;
+    }
+
+    int result = 0;
+    char buf[4096];
+    for (int i = 1; i < argc; i++) {
+        FILE *file = fopen(argv[i], "rb");
+        if (!file) {
+            perror("cat");
+            result = 1;
+            continue;
+        }
+
+        size_t bytes_read;
+        while ((bytes_read = fread(buf, 1, sizeof(buf), file)) > 0) {
+            if (fwrite(buf, 1, bytes_read, stdout) != bytes_read) {
+                perror("cat");
+                result = 1;
+                break;
+            }
+        }
+        if (ferror(file)) {
+            perror("cat");
+            result = 1;
+        }
+        if (fclose(file) != 0) {
+            perror("cat");
+            result = 1;
+        }
+    }
+    return result;
+}
+
+static int parse_line_count(const char *text, const char *command,
+                            unsigned long *line_count)
+{
+    char *end;
+    errno = 0;
+    unsigned long count = strtoul(text, &end, 10);
+    if (text[0] == '-' || text[0] == '\0' || *end != '\0' ||
+        end == text || errno == ERANGE) {
+        fprintf(stderr, "%s: invalid number of lines\n", command);
+        return 1;
+    }
+    *line_count = count;
+    return 0;
 }
 
 static int cmd_head(int argc, char **argv)
 {
-    (void)argc; (void)argv;
-    /* TODO: print first N lines of argv[1], default N=10
-     * Support -n <N> to override */
-    fprintf(stderr, "head: not yet implemented\n");
-    return 1;
+    unsigned long line_count = 10;
+    const char *path;
+    if (argc >= 2 && strcmp(argv[1], "-n") == 0) {
+        if (argc < 4) {
+            fprintf(stderr, "head: missing operand\n");
+            return 1;
+        }
+        if (parse_line_count(argv[2], "head", &line_count) != 0)
+            return 1;
+        path = argv[3];
+    } else {
+        if (argc < 2) {
+            fprintf(stderr, "head: missing operand\n");
+            return 1;
+        }
+        path = argv[1];
+    }
+
+    FILE *file = fopen(path, "rb");
+    if (!file) {
+        perror("head");
+        return 1;
+    }
+
+    char *line = NULL;
+    size_t capacity = 0;
+    unsigned long lines_printed = 0;
+    ssize_t length;
+    int result = 0;
+    while (lines_printed < line_count &&
+           (length = getline(&line, &capacity, file)) != -1) {
+        if (fwrite(line, 1, (size_t)length, stdout) != (size_t)length) {
+            perror("head");
+            result = 1;
+            break;
+        }
+        lines_printed++;
+    }
+    if (ferror(file)) {
+        perror("head");
+        result = 1;
+    }
+    free(line);
+    if (fclose(file) != 0) {
+        perror("head");
+        result = 1;
+    }
+    return result;
 }
 
 static int cmd_tail(int argc, char **argv)
 {
-    (void)argc; (void)argv;
-    /* TODO: print last N lines, default N=10
-     * Hint: circular buffer of N lines, print after EOF */
-    fprintf(stderr, "tail: not yet implemented\n");
-    return 1;
+    unsigned long line_count = 10;
+    const char *path;
+    if (argc >= 2 && strcmp(argv[1], "-n") == 0) {
+        if (argc < 4) {
+            fprintf(stderr, "tail: missing operand\n");
+            return 1;
+        }
+        if (parse_line_count(argv[2], "tail", &line_count) != 0)
+            return 1;
+        path = argv[3];
+    } else {
+        if (argc < 2) {
+            fprintf(stderr, "tail: missing operand\n");
+            return 1;
+        }
+        path = argv[1];
+    }
+
+    FILE *file = fopen(path, "rb");
+    if (!file) {
+        perror("tail");
+        return 1;
+    }
+
+    struct tail_line {
+        char *data;
+        size_t length;
+    };
+    size_t capacity = (size_t)line_count;
+    if ((unsigned long)capacity != line_count ||
+        capacity > (size_t)-1 / sizeof(struct tail_line)) {
+        fprintf(stderr, "tail: invalid number of lines\n");
+        fclose(file);
+        return 1;
+    }
+    struct tail_line *lines = capacity
+        ? calloc(capacity, sizeof(*lines)) : NULL;
+    if (capacity && !lines) {
+        perror("tail");
+        fclose(file);
+        return 1;
+    }
+
+    char *line = NULL;
+    size_t line_capacity = 0;
+    size_t stored = 0;
+    size_t next = 0;
+    ssize_t length;
+    int result = 0;
+    while ((length = getline(&line, &line_capacity, file)) != -1) {
+        if (capacity == 0)
+            continue;
+
+        char *copy = malloc((size_t)length);
+        if (!copy) {
+            perror("tail");
+            result = 1;
+            break;
+        }
+        memcpy(copy, line, (size_t)length);
+        free(lines[next].data);
+        lines[next].data = copy;
+        lines[next].length = (size_t)length;
+        next = (next + 1) % capacity;
+        if (stored < capacity)
+            stored++;
+    }
+    if (ferror(file)) {
+        perror("tail");
+        result = 1;
+    }
+    free(line);
+    if (fclose(file) != 0) {
+        perror("tail");
+        result = 1;
+    }
+
+    size_t start = (stored == capacity && capacity != 0) ? next : 0;
+    for (size_t i = 0; i < stored; i++) {
+        size_t index = (start + i) % capacity;
+        if (fwrite(lines[index].data, 1, lines[index].length, stdout) !=
+            lines[index].length) {
+            perror("tail");
+            result = 1;
+            break;
+        }
+    }
+    for (size_t i = 0; i < stored; i++)
+        free(lines[i].data);
+    free(lines);
+    return result;
 }
 
 static int cmd_wc(int argc, char **argv)
 {
-    (void)argc; (void)argv;
-    /* TODO: count and print lines, words, bytes in argv[1]
-     * Hint: fgetc loop — track newlines, whitespace transitions, bytes */
-    fprintf(stderr, "wc: not yet implemented\n");
-    return 1;
+    if (argc < 2) {
+        fprintf(stderr, "wc: missing operand\n");
+        return 1;
+    }
+
+    FILE *file = fopen(argv[1], "rb");
+    if (!file) {
+        perror("wc");
+        return 1;
+    }
+
+    unsigned long newlines = 0;
+    unsigned long words = 0;
+    unsigned long bytes = 0;
+    int in_word = 0;
+    int ch;
+    while ((ch = fgetc(file)) != EOF) {
+        bytes++;
+        if (ch == '\n')
+            newlines++;
+        if (isspace((unsigned char)ch)) {
+            in_word = 0;
+        } else if (!in_word) {
+            words++;
+            in_word = 1;
+        }
+    }
+
+    int result = 0;
+    if (ferror(file)) {
+        perror("wc");
+        result = 1;
+    } else {
+        printf("%lu %lu %lu %s\n", newlines, words, bytes, argv[1]);
+    }
+    if (fclose(file) != 0) {
+        perror("wc");
+        result = 1;
+    }
+    return result;
 }
 
 static int cmd_echo(int argc, char **argv)
 {
-    (void)argc; (void)argv;
-    /* TODO: print argv[1..argc-1] separated by spaces + newline */
-    fprintf(stderr, "echo: not yet implemented\n");
-    return 1;
+    for (int i = 1; i < argc; i++) {
+        if (i > 1)
+            putchar(' ');
+        fputs(argv[i], stdout);
+    }
+    putchar('\n');
+    if (ferror(stdout)) {
+        perror("echo");
+        return 1;
+    }
+    return 0;
 }
 
 static int cmd_pwd(int argc, char **argv)
 {
     (void)argc; (void)argv;
-    /* TODO: char buf[PATH_MAX]; getcwd(buf, sizeof(buf)); puts(buf); */
-    fprintf(stderr, "pwd: not yet implemented\n");
-    return 1;
+    char buf[PATH_MAX];
+    if (!getcwd(buf, sizeof(buf))) {
+        perror("pwd");
+        return 1;
+    }
+    if (puts(buf) == EOF) {
+        perror("pwd");
+        return 1;
+    }
+    return 0;
 }
