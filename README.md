@@ -61,7 +61,7 @@ or manually:
 qemu-system-x86_64 -M pc \
   -kernel buildroot/output/images/bzImage \
   -drive file=buildroot/output/images/rootfs.ext2,if=virtio,format=raw \
-  -append "rootwait root=/dev/vda console=tty1 console=ttyS0 init=/sbin/barely-init quiet loglevel=3" \
+  -append "rootwait root=/dev/vda rw console=tty1 console=ttyS0 init=/sbin/barely-init quiet loglevel=3" \
   -net nic,model=virtio -net user \
   -nographic
 ```
@@ -77,7 +77,7 @@ to exit: `Ctrl A, X` or type `poweroff` in the shell
 - [x] working baseline userspace
 - [x] custom PID 1 (barely-init)
 - [x] custom shell (barelysh) — builtins in progress
-- [ ] custom utilities (ls, cat, mkdir, mv, ...)
+- [x] custom utilities (ls, cat, mkdir, mv, ...)
 
 --- 
 

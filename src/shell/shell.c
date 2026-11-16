@@ -21,6 +21,7 @@
 static int builtin_cd(int argc, char **argv);
 static int builtin_exit(int argc, char **argv);
 static int builtin_help(int argc, char **argv);
+static int builtin_bash(int argc, char **argv);
 static int cmd_ls(int argc, char **argv);
 static int cmd_find(int argc, char **argv);
 static int cmd_stat(int argc, char **argv);
@@ -48,9 +49,10 @@ static int print_tree(const char *path, const char *prefix);
 
 
 static const builtin_t builtins[] = {
-    { "cd",     builtin_cd,    "change directory"            },
-    { "exit",   builtin_exit,  "exit the shell"              },
-    { "help",   builtin_help,  "list built-in commands"      },
+    { "cd",     builtin_cd,    "change directory"                        },
+    { "exit",   builtin_exit,  "exit the shell"                          },
+    { "help",   builtin_help,  "list built-in commands"                  },
+    { "bash",   builtin_bash,  "run a command via /bin/sh, bypassing us" },
     { "ls",     cmd_ls,        "list directory contents"     },
     { "find",   cmd_find,      "search for files"            },
     { "stat",   cmd_stat,      "display file status"         },
@@ -124,15 +126,68 @@ static int builtin_help(int argc, char **argv)
     return 0;
 }
 
+static int builtin_bash(int argc, char **argv)
+{
+    if (argc < 2) {
+        fprintf(stderr, "bash: usage: bash <command> [args...]\n");
+        return 1;
+    }
+
+    size_t total = 0;
+    for (int i = 1; i < argc; i++)
+        total += strlen(argv[i]) + 1;
+
+    char *cmd = malloc(total);
+    if (!cmd) { perror("bash"); return 1; }
+
+    cmd[0] = '\0';
+    for (int i = 1; i < argc; i++) {
+        if (i > 1) strcat(cmd, " ");
+        strcat(cmd, argv[i]);
+    }
+
+    pid_t pid = fork();
+    if (pid < 0) { perror("bash"); free(cmd); return 1; }
+    if (pid == 0) {
+        execl("/bin/sh", "sh", "-c", cmd, (char *)NULL);
+        perror("bash");
+        _exit(127);
+    }
+    int status;
+    waitpid(pid, &status, 0);
+    free(cmd);
+    return WIFEXITED(status) ? WEXITSTATUS(status) : 1;
+}
+
 int main(void)
 {
     char  line[SHELL_MAX_INPUT];
     char *argv[MAX_ARGS];
+    char  cwd[PATH_MAX];
+    const char *home = getenv("HOME");
+    if (!home) home = "/root";
+    setenv("HOME", home, 0);
+
+    if (getcwd(cwd, sizeof(cwd)) && strcmp(cwd, "/") == 0) {
+        chdir(home);
+    }
 
     printf("barelyOS shell v" BARELY_VERSION " | type 'help' for built-ins\n\n");
 
     while (1) {
-        printf("barelysh$ ");
+        const char *display;
+        char rel[PATH_MAX];
+        if (!getcwd(cwd, sizeof(cwd))) {
+            display = "?";
+        } else if (strncmp(cwd, home, strlen(home)) == 0 &&
+                   (cwd[strlen(home)] == '/' || cwd[strlen(home)] == '\0')) {
+            snprintf(rel, sizeof(rel), "~%s", cwd + strlen(home));
+            display = rel;
+        } else {
+            display = cwd;
+        }
+
+        printf("barelysh:%s$ ", display);
         fflush(stdout);
 
         if (!fgets(line, sizeof(line), stdin)) { printf("\n"); break; }
@@ -182,12 +237,12 @@ static int cmd_ls(int argc, char **argv)
         if (long_format) {
             char mode[11];
             mode_string(st.st_mode, mode);
-            printf("%s %3lu %s %s %8lld %s %s\n", mode,
+            printf("%s %3lu %s %s %8lld %.12s %s\n", mode,
                    (unsigned long)st.st_nlink,
                    getpwuid(st.st_uid) ? getpwuid(st.st_uid)->pw_name : "?",
                    getgrgid(st.st_gid) ? getgrgid(st.st_gid)->gr_name : "?",
                    (long long)st.st_size,
-                   ctime(&st.st_mtime) ? ctime(&st.st_mtime) + 4 : "",
+                   ctime(&st.st_mtime) ? ctime(&st.st_mtime) + 4 : "unknown",
                    path_basename(path));
         } else {
             puts(path_basename(path));
@@ -497,21 +552,18 @@ static int cmd_chmod(int argc, char **argv)
         fprintf(stderr, "chmod: missing operand\n");
         return 1;
     }
-    mode_t mode = (mode_t)strtol(argv[1], NULL, 8);
+    char *end;
+    mode_t mode = (mode_t)strtol(argv[1], &end, 8);
+    if (*end != '\0' || end == argv[1]) {
+        fprintf(stderr, "chmod: invalid mode: %s\n", argv[1]);
+        return 1;
+    }
     if (chmod(argv[2], mode) < 0) {
         perror("chmod");
         return 1;
     }
     return 0;
 }
-
-/* ── Kisna: mkdir, rmdir, rm, touch ────────────────────────────────────── */
-/* Useful headers:
- *   #include <sys/stat.h>  — mkdir()
- *   #include <unistd.h>    — rmdir(), unlink()
- *   #include <fcntl.h>     — open(), O_CREAT
- *   #include <utime.h>     — utime()
- */
 
 static int cmd_mkdir(int argc, char **argv)
 {
@@ -574,14 +626,6 @@ static int cmd_touch(int argc, char **argv)
     }
     return 0;
 }
-
-/* ── Abhigya: cat, head, tail, wc, echo, pwd ───────────────────────────── */
-/* Useful headers:
- *   #include <stdio.h>     — fopen, fgets, fclose
- *   #include <unistd.h>    — getcwd()
- *   #include <string.h>    — strlen()
- *   #include <limits.h>    — PATH_MAX
- */
 
 static int cmd_cat(int argc, char **argv)
 {

@@ -41,7 +41,7 @@ run:
 	qemu-system-x86_64 -M pc \
 		-kernel $(BR_DIR)/output/images/bzImage \
 		-drive file=$(BR_DIR)/output/images/rootfs.ext2,if=virtio,format=raw \
-		-append "rootwait root=/dev/vda console=tty1 console=ttyS0 init=/sbin/barely-init quiet loglevel=3" \
+		-append "rootwait root=/dev/vda rw console=tty1 console=ttyS0 init=/sbin/barely-init quiet loglevel=3" \
 		-net nic,model=virtio -net user \
 		-nographic
 
