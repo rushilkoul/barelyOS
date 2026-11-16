@@ -186,43 +186,107 @@ static int cmd_tree(int argc, char **argv)
 
 /* ── Kaustubh: mv, cp, ln, chmod ───────────────────────────────────────── */
 /* Useful headers:
- *   #include <sys/stat.h>  — chmod(), stat()
- *   #include <fcntl.h>     — open(), O_RDONLY, O_WRONLY, O_CREAT
- *   #include <unistd.h>    — rename(), link(), symlink(), unlink()
+-   #include <sys/stat.h>  — chmod(), stat()
+-   #include <fcntl.h>     — open(), O_RDONLY, O_WRONLY, O_CREAT
+-   #include <unistd.h>    — rename(), link(), symlink(), unlink()
  */
+
+static int copy_file(const char *src, const char *dst)
+{
+    int in_fd = open(src, O_RDONLY);
+    if (in_fd < 0)
+        return -1;
+
+    int out_fd = open(dst, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (out_fd < 0) {
+        close(in_fd);
+        return -1;
+    }
+
+    char buf[4096];
+    ssize_t n;
+    while ((n = read(in_fd, buf, sizeof(buf))) > 0) {
+        if (write(out_fd, buf, (size_t)n) != n) {
+            close(in_fd);
+            close(out_fd);
+            return -1;
+        }
+    }
+
+    close(in_fd);
+    close(out_fd);
+    return (n < 0) ? -1 : 0;
+}
 
 static int cmd_mv(int argc, char **argv)
 {
-    (void)argc; (void)argv;
-    /* TODO: rename(argv[1], argv[2])
-     * Cross-filesystem: copy + unlink */
-    fprintf(stderr, "mv: not yet implemented\n");
-    return 1;
+    if (argc < 3) {
+        fprintf(stderr, "mv: missing operand\n");
+        return 1;
+    }
+    if (rename(argv[1], argv[2]) < 0) {
+        if (errno == EXDEV) {
+            if (copy_file(argv[1], argv[2]) < 0 || unlink(argv[1]) < 0) {
+                perror("mv");
+                return 1;
+            }
+            return 0;
+        }
+        perror("mv");
+        return 1;
+    }
+    return 0;
 }
 
 static int cmd_cp(int argc, char **argv)
 {
-    (void)argc; (void)argv;
-    /* TODO: open both files, read/write in a loop
-     * Stretch: -r for recursive directory copy */
-    fprintf(stderr, "cp: not yet implemented\n");
-    return 1;
+    if (argc < 3) {
+        fprintf(stderr, "cp: missing operand\n");
+        return 1;
+    }
+    if (copy_file(argv[1], argv[2]) < 0) {
+        perror("cp");
+        return 1;
+    }
+    return 0;
 }
 
 static int cmd_ln(int argc, char **argv)
 {
-    (void)argc; (void)argv;
-    /* TODO: link() for hard, symlink() for soft (-s flag) */
-    fprintf(stderr, "ln: not yet implemented\n");
-    return 1;
+    if (argc < 3) {
+        fprintf(stderr, "ln: missing operand\n");
+        return 1;
+    }
+    if (strcmp(argv[1], "-s") == 0) {
+        if (argc < 4) {
+            fprintf(stderr, "ln: missing operand\n");
+            return 1;
+        }
+        if (symlink(argv[2], argv[3]) < 0) {
+            perror("ln");
+            return 1;
+        }
+        return 0;
+    }
+    if (link(argv[1], argv[2]) < 0) {
+        perror("ln");
+        return 1;
+    }
+    return 0;
 }
 
 static int cmd_chmod(int argc, char **argv)
 {
-    (void)argc; (void)argv;
-    /* TODO: strtol(argv[1], NULL, 8) to parse octal mode, then chmod() */
-    fprintf(stderr, "chmod: not yet implemented\n");
-    return 1;
+    if (argc < 3) {
+        fprintf(stderr, "chmod: missing operand\n");
+        return 1;
+    }
+    mode_t mode = (mode_t)strtol(argv[1], NULL, 8);
+    if (chmod(argv[2], mode) < 0) {
+        perror("chmod");
+        return 1;
+    }
+    return 0;
 }
 
 /* ── Kisna: mkdir, rmdir, rm, touch ────────────────────────────────────── */
