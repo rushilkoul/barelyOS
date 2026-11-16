@@ -10,6 +10,11 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <utime.h>
+#include <dirent.h>
+#include <fnmatch.h>
+#include <pwd.h>
+#include <grp.h>
+#include <time.h>
 
 #include "shell.h"
 
@@ -34,6 +39,12 @@ static int cmd_tail(int argc, char **argv);
 static int cmd_wc(int argc, char **argv);
 static int cmd_echo(int argc, char **argv);
 static int cmd_pwd(int argc, char **argv);
+
+static void mode_string(mode_t mode, char out[11]);
+static const char *path_basename(const char *path);
+static int list_directory(const char *path, int show_all, int long_format);
+static int find_matches(const char *path, const char *pattern);
+static int print_tree(const char *path, const char *prefix);
 
 
 static const builtin_t builtins[] = {
@@ -115,7 +126,7 @@ static int builtin_help(int argc, char **argv)
 
 int main(void)
 {
-    char  line[MAX_INPUT];
+    char  line[SHELL_MAX_INPUT];
     char *argv[MAX_ARGS];
 
     printf("barelyOS shell v" BARELY_VERSION " | type 'help' for built-ins\n\n");
@@ -142,56 +153,259 @@ int main(void)
     return 0;
 }
 
-/* ── Shreyansh: ls, find, stat, tree ───────────────────────────────────── */
-/* Useful headers:
- *   #include <dirent.h>    — opendir, readdir, closedir
- *   #include <sys/stat.h>  — stat(), struct stat
- *   #include <pwd.h>       — getpwuid()
- *   #include <grp.h>       — getgrgid()
- */
-
 static int cmd_ls(int argc, char **argv)
 {
-    (void)argc; (void)argv;
-    /* TODO: list contents of argv[1] (default: ".")
-     * Stretch: -l long format, -a show hidden files */
-    fprintf(stderr, "ls: not yet implemented\n");
-    return 1;
+    int show_all = 0, long_format = 0;
+    const char *path = ".";
+
+    for (int i = 1; i < argc; i++) {
+        if (argv[i][0] == '-' && argv[i][1] != '\0') {
+            for (const char *opt = argv[i] + 1; *opt; opt++) {
+                if (*opt == 'a') show_all = 1;
+                else if (*opt == 'l') long_format = 1;
+                else {
+                    fprintf(stderr, "ls: invalid option -- '%c'\n", *opt);
+                    return 1;
+                }
+            }
+        } else {
+            path = argv[i];
+        }
+    }
+
+    struct stat st;
+    if (stat(path, &st) < 0) {
+        perror("ls");
+        return 1;
+    }
+    if (!S_ISDIR(st.st_mode)) {
+        if (long_format) {
+            char mode[11];
+            mode_string(st.st_mode, mode);
+            printf("%s %3lu %s %s %8lld %s %s\n", mode,
+                   (unsigned long)st.st_nlink,
+                   getpwuid(st.st_uid) ? getpwuid(st.st_uid)->pw_name : "?",
+                   getgrgid(st.st_gid) ? getgrgid(st.st_gid)->gr_name : "?",
+                   (long long)st.st_size,
+                   ctime(&st.st_mtime) ? ctime(&st.st_mtime) + 4 : "",
+                   path_basename(path));
+        } else {
+            puts(path_basename(path));
+        }
+        return 0;
+    }
+    return list_directory(path, show_all, long_format);
 }
 
 static int cmd_find(int argc, char **argv)
 {
-    (void)argc; (void)argv;
-    /* TODO: recursively search argv[1] for name matching argv[2]
-     * Hint: recursive opendir/readdir, fnmatch() for pattern matching */
-    fprintf(stderr, "find: not yet implemented\n");
-    return 1;
+    const char *root = ".";
+    const char *pattern = "*";
+
+    if (argc > 1) root = argv[1];
+    if (argc > 2) {
+        if (strcmp(argv[2], "-name") == 0 && argc > 3)
+            pattern = argv[3];
+        else
+            pattern = argv[2];
+    }
+    return find_matches(root, pattern) < 0 ? 1 : 0;
 }
 
 static int cmd_stat(int argc, char **argv)
 {
-    (void)argc; (void)argv;
-    /* TODO: print size, permissions, timestamps of argv[1]
-     * Hint: stat(), struct stat */
-    fprintf(stderr, "stat: not yet implemented\n");
-    return 1;
+    if (argc < 2) {
+        fprintf(stderr, "stat: missing operand\n");
+        return 1;
+    }
+    int failed = 0;
+    for (int i = 1; i < argc; i++) {
+        struct stat st;
+        if (lstat(argv[i], &st) < 0) {
+            perror(argv[i]);
+            failed = 1;
+            continue;
+        }
+        char mode[11];
+        mode_string(st.st_mode, mode);
+        struct passwd *pw = getpwuid(st.st_uid);
+        struct group *gr = getgrgid(st.st_gid);
+        char *modified = ctime(&st.st_mtime);
+        printf("  File: %s\n", argv[i]);
+        printf("  Size: %lld\tBlocks: %lld\tIO Block: %ld\n",
+               (long long)st.st_size, (long long)st.st_blocks,
+               (long)st.st_blksize);
+        printf("Device: %u\tInode: %llu\tLinks: %lu\n",
+               (unsigned int)st.st_dev, (unsigned long long)st.st_ino,
+               (unsigned long)st.st_nlink);
+        printf("Access: (%04o/%s)\tUid: (%u/%s)\tGid: (%u/%s)\n",
+               (unsigned int)(st.st_mode & 07777), mode,
+               (unsigned int)st.st_uid, pw ? pw->pw_name : "?",
+               (unsigned int)st.st_gid, gr ? gr->gr_name : "?");
+        printf("Modify: %s", modified ? modified : "unknown\n");
+    }
+    return failed;
 }
 
 static int cmd_tree(int argc, char **argv)
 {
-    (void)argc; (void)argv;
-    /* TODO: print directory tree rooted at argv[1] (default: ".")
-     * Hint: recursive opendir/readdir, indent by depth */
-    fprintf(stderr, "tree: not yet implemented\n");
-    return 1;
+    const char *root = (argc > 1) ? argv[1] : ".";
+    struct stat st;
+    if (lstat(root, &st) < 0) {
+        perror("tree");
+        return 1;
+    }
+    puts(root);
+    if (!S_ISDIR(st.st_mode)) return 0;
+    return print_tree(root, "") < 0 ? 1 : 0;
 }
 
-/* ── Kaustubh: mv, cp, ln, chmod ───────────────────────────────────────── */
-/* Useful headers:
--   #include <sys/stat.h>  — chmod(), stat()
--   #include <fcntl.h>     — open(), O_RDONLY, O_WRONLY, O_CREAT
--   #include <unistd.h>    — rename(), link(), symlink(), unlink()
- */
+static const char *path_basename(const char *path)
+{
+    const char *base = strrchr(path, '/');
+    return base ? base + 1 : path;
+}
+
+static void mode_string(mode_t mode, char out[11])
+{
+    out[0] = S_ISDIR(mode) ? 'd' : S_ISLNK(mode) ? 'l' :
+             S_ISCHR(mode) ? 'c' : S_ISBLK(mode) ? 'b' :
+             S_ISFIFO(mode) ? 'p' : S_ISSOCK(mode) ? 's' : '-';
+    const mode_t bits[] = { S_IRUSR, S_IWUSR, S_IXUSR, S_IRGRP, S_IWGRP,
+                            S_IXGRP, S_IROTH, S_IWOTH, S_IXOTH };
+    const char chars[] = "rwxrwxrwx";
+    for (int i = 0; i < 9; i++) out[i + 1] = (mode & bits[i]) ? chars[i] : '-';
+    if (mode & S_ISUID) out[3] = (mode & S_IXUSR) ? 's' : 'S';
+    if (mode & S_ISGID) out[6] = (mode & S_IXGRP) ? 's' : 'S';
+    if (mode & S_ISVTX) out[9] = (mode & S_IXOTH) ? 't' : 'T';
+    out[10] = '\0';
+}
+
+static int list_directory(const char *path, int show_all, int long_format)
+{
+    DIR *dir = opendir(path);
+    if (!dir) { perror(path); return 1; }
+    int failed = 0;
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (!show_all && entry->d_name[0] == '.') continue;
+        if (!long_format) {
+            printf("%s\n", entry->d_name);
+            continue;
+        }
+        char full[4096];
+        int n = snprintf(full, sizeof(full), "%s/%s", path, entry->d_name);
+        struct stat st;
+        if (n < 0 || (size_t)n >= sizeof(full) || lstat(full, &st) < 0) {
+            perror(entry->d_name);
+            failed = 1;
+            continue;
+        }
+        char mode[11];
+        mode_string(st.st_mode, mode);
+        struct passwd *pw = getpwuid(st.st_uid);
+        struct group *gr = getgrgid(st.st_gid);
+        char *date = ctime(&st.st_mtime);
+        printf("%s %3lu %-8s %-8s %8lld %.12s %s", mode,
+               (unsigned long)st.st_nlink, pw ? pw->pw_name : "?",
+               gr ? gr->gr_name : "?", (long long)st.st_size,
+               date ? date + 4 : "unknown", entry->d_name);
+        if (S_ISLNK(st.st_mode)) {
+            char target[4096];
+            ssize_t len = readlink(full, target, sizeof(target) - 1);
+            if (len >= 0) { target[len] = '\0'; printf(" -> %s", target); }
+        }
+        putchar('\n');
+    }
+    if (closedir(dir) < 0) { perror(path); failed = 1; }
+    return failed;
+}
+
+static int find_matches(const char *path, const char *pattern)
+{
+    struct stat st;
+    if (lstat(path, &st) < 0) { perror(path); return -1; }
+    if (fnmatch(pattern, path_basename(path), 0) == 0) puts(path);
+    if (!S_ISDIR(st.st_mode)) return 0;
+
+    DIR *dir = opendir(path);
+    if (!dir) { perror(path); return -1; }
+    int failed = 0;
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+            continue;
+        char child[4096];
+        int n = snprintf(child, sizeof(child), "%s%s%s", path,
+                         strcmp(path, "/") == 0 ? "" : "/", entry->d_name);
+        if (n < 0 || (size_t)n >= sizeof(child)) {
+            fprintf(stderr, "find: path too long: %s/%s\n", path, entry->d_name);
+            failed = 1;
+        } else if (find_matches(child, pattern) < 0) {
+            failed = 1;
+        }
+    }
+    if (closedir(dir) < 0) { perror(path); failed = 1; }
+    return failed ? -1 : 0;
+}
+
+static int print_tree(const char *path, const char *prefix)
+{
+    DIR *dir = opendir(path);
+    if (!dir) { perror(path); return -1; }
+    struct dirent *entry;
+    char **names = NULL;
+    size_t count = 0, capacity = 0;
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+            continue;
+        if (count == capacity) {
+            size_t next = capacity ? capacity * 2 : 16;
+            char **grown = realloc(names, next * sizeof(*names));
+            if (!grown) { perror("tree"); closedir(dir); goto fail; }
+            names = grown;
+            capacity = next;
+        }
+        names[count] = strdup(entry->d_name);
+        if (!names[count]) { perror("tree"); closedir(dir); goto fail; }
+        count++;
+    }
+    if (closedir(dir) < 0) { perror(path); goto fail; }
+    for (size_t i = 0; i < count; i++) {
+        for (size_t j = i + 1; j < count; j++) {
+            if (strcmp(names[i], names[j]) > 0) {
+                char *tmp = names[i]; names[i] = names[j]; names[j] = tmp;
+            }
+        }
+    }
+    for (size_t i = 0; i < count; i++) {
+        int last = i + 1 == count;
+        char child[4096], next_prefix[4096];
+        int n = snprintf(child, sizeof(child), "%s%s%s", path,
+                         strcmp(path, "/") == 0 ? "" : "/", names[i]);
+        if (n < 0 || (size_t)n >= sizeof(child)) {
+            fprintf(stderr, "tree: path too long: %s/%s\n", path, names[i]);
+            goto fail;
+        }
+        printf("%s%s%s\n", prefix, last ? "└── " : "├── ", names[i]);
+        struct stat st;
+        if (lstat(child, &st) == 0 && S_ISDIR(st.st_mode)) {
+            n = snprintf(next_prefix, sizeof(next_prefix), "%s%s",
+                         prefix, last ? "    " : "│   ");
+            if (n < 0 || (size_t)n >= sizeof(next_prefix) ||
+                print_tree(child, next_prefix) < 0)
+                goto fail;
+        }
+        free(names[i]);
+        names[i] = NULL;
+    }
+    free(names);
+    return 0;
+fail:
+    for (size_t i = 0; i < count; i++) free(names[i]);
+    free(names);
+    return -1;
+}
 
 static int copy_file(const char *src, const char *dst)
 {

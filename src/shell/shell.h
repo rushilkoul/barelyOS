@@ -3,7 +3,7 @@
 
 #define BARELY_VERSION  "0.1"
 #define MAX_ARGS        64
-#define MAX_INPUT       1024
+#define SHELL_MAX_INPUT  1024
 
 typedef int (*builtin_fn)(int argc, char **argv);
 
